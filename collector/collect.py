@@ -163,12 +163,19 @@ def collect_latest_release():
 
 def collect_nightly_binaries():
     release = get(f"/repos/{BUILDS_REPO}/releases/tags/dev-latest")
-    published = release["published_at"]
-    age = age_hours(published)
+    # dev-latest is a rolling release: assets are replaced nightly while the release
+    # itself keeps its original publish date, so freshness is the newest asset upload.
     assets = [
-        {"name": a["name"], "size": a["size"], "url": a["browser_download_url"]}
+        {
+            "name": a["name"],
+            "size": a["size"],
+            "url": a["browser_download_url"],
+            "updated_at": a["updated_at"],
+        }
         for a in release["assets"]
     ]
+    published = max((a["updated_at"] for a in assets), default=release["published_at"])
+    age = age_hours(published)
     return {
         "status": "success" if age is not None and age <= STALE_HOURS else "stale",
         "published_at": published,

@@ -66,12 +66,13 @@ function releasesSection(data) {
   const nightlyCard = el("div", { class: `card ${nightlyStatus}` },
     el("h3", {}, link("Nightly binaries (dev-latest)", nightly.url)),
     el("span", { class: `badge ${nightlyStatus}` }, nightlyStatus),
-    el("div", { class: "muted" }, nightly.published_at ? `published ${ago(nightly.published_at)}` : nightly.error || ""));
+    el("div", { class: "muted" }, nightly.published_at ? `updated ${ago(nightly.published_at)}` : nightly.error || ""));
   if (nightlyStatus === "stale") nightlyCard.append(el("div", { class: "muted" }, "Older than 36 h"));
   if (nightly.assets) {
     const list = el("ul");
     for (const asset of nightly.assets) {
-      list.append(el("li", {}, link(`${asset.name} (${(asset.size / 1048576).toFixed(0)} MB)`, asset.url)));
+      const size = asset.size >= 1048576 ? `${(asset.size / 1048576).toFixed(0)} MB` : `${Math.max(1, Math.round(asset.size / 1024))} KB`;
+      list.append(el("li", {}, link(`${asset.name} (${size})`, asset.url)));
     }
     nightlyCard.append(list);
   }
