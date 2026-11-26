@@ -49,6 +49,30 @@ function workflowCard(w) {
   return card;
 }
 
+function testResultCard(w) {
+  const status = w.status || "unknown";
+  const card = el("div", { class: `card ${status}` },
+    el("h3", {}, link(w.name, w.url)),
+    el("span", { class: `badge ${status}` }, status));
+  if (w.error) card.append(el("div", { class: "muted" }, w.error));
+  if (w.updated_at) card.append(el("div", { class: "muted" }, `${ago(w.updated_at)} · ${w.sha || ""}`));
+
+  const list = el("ul", { class: "jobs" });
+  for (const report of w.reports || []) {
+    const label = report.name.replace(/^(gtest|pytest)-results-/, "$1 ");
+    const summary = report.error
+      ? report.error
+      : `${report.passed} passed, ${report.failed} failed, ${report.skipped} skipped`;
+    const item = el("li", {}, el("span", { class: `dot ${report.status}` }), `${label}: ${summary}`);
+    if (report.failed_tests && report.failed_tests.length) {
+      item.append(el("ul", {}, ...report.failed_tests.map((t) => el("li", {}, t))));
+    }
+    list.append(item);
+  }
+  if (list.children.length) card.append(list);
+  return card;
+}
+
 function fill(id, workflows) {
   $(id).replaceChildren(...workflows.map(workflowCard));
 }
@@ -102,6 +126,7 @@ async function main() {
 
   fill("builds", data.builds || []);
   fill("tests", data.tests || []);
+  $("test-results").replaceChildren(...(data.test_results || []).map(testResultCard));
   fill("quality", data.quality || []);
   releasesSection(data);
   $("links").replaceChildren(...(data.links || []).map((l) => el("li", {}, link(l.name, l.url))));

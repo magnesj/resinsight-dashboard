@@ -6,10 +6,14 @@ Every source is collected independently; a failing source yields
 {"status": "unknown", "error": ...} instead of aborting the run.
 """
 
+import io
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
+import xml.etree.ElementTree as ET
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -41,6 +45,17 @@ WORKFLOWS = {
 }
 
 
+# Workflows uploading gtest-results-* / pytest-results-* artifacts (OPM/ResInsight#15261)
+TEST_RESULT_WORKFLOWS = [
+    ("Windows / Ubuntu unit tests + pytest", "ResInsightWithCache.yml"),
+    ("RHEL8 unit tests", "rhel8-unit-tests.yml"),
+    ("macOS unit tests + pytest", "ResInsightMac.yml"),
+    ("Application framework unit tests", "AppFwkUnitTest.yml"),
+]
+TEST_ARTIFACT_PREFIXES = ("gtest-results-", "pytest-results-")
+MAX_FAILED_TESTS = 50
+
+
 def now():
     return datetime.now(timezone.utc)
 
@@ -64,6 +79,31 @@ def get(path, **params):
         request.add_header("Authorization", f"Bearer {token}")
     with urllib.request.urlopen(request, timeout=30) as response:
         return json.load(response)
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+def download_artifact(repo, artifact_id):
+    """Download an artifact zip. Needs a token, even for public repositories."""
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if not token:
+        raise RuntimeError("artifact download requires GITHUB_TOKEN")
+    request = urllib.request.Request(f"{API}/repos/{repo}/actions/artifacts/{artifact_id}/zip")
+    request.add_header("Authorization", f"Bearer {token}")
+    request.add_header("User-Agent", "resinsight-dashboard")
+    try:
+        urllib.request.build_opener(_NoRedirect).open(request, timeout=60)
+        raise RuntimeError("expected a redirect to the artifact archive")
+    except urllib.error.HTTPError as exc:
+        location = exc.headers.get("Location")
+        if exc.code not in (301, 302, 307) or not location:
+            raise
+    # The archive lives on blob storage and must be fetched without the API token
+    with urllib.request.urlopen(location, timeout=120) as response:
+        return response.read()
 
 
 def safe(fn, *args):
@@ -140,6 +180,87 @@ def collect_workflows(group):
     return results
 
 
+def parse_test_report(xml_bytes):
+    """Count results in a gtest XML or JUnit XML report (the testcase layout is shared)."""
+    counts = {"total": 0, "passed": 0, "failed": 0, "skipped": 0, "failed_tests": []}
+    for case in ET.fromstring(xml_bytes).iter("testcase"):
+        counts["total"] += 1
+        name = f"{case.get('classname', '')}.{case.get('name', '')}".strip(".")
+        if case.find("failure") is not None or case.find("error") is not None:
+            counts["failed"] += 1
+            counts["failed_tests"].append(name)
+        elif (
+            case.find("skipped") is not None
+            or case.get("status") == "notrun"
+            or case.get("result") in ("skipped", "suppressed")
+        ):
+            counts["skipped"] += 1
+        else:
+            counts["passed"] += 1
+    return counts
+
+
+def parse_artifact(archive_bytes):
+    total = {"total": 0, "passed": 0, "failed": 0, "skipped": 0, "failed_tests": []}
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+        for member in archive.namelist():
+            if member.lower().endswith(".xml"):
+                counts = parse_test_report(archive.read(member))
+                for key in ("total", "passed", "failed", "skipped"):
+                    total[key] += counts[key]
+                total["failed_tests"] += counts["failed_tests"]
+    return total
+
+
+def test_report_status(failed, total):
+    return "failure" if failed else ("success" if total else "unknown")
+
+
+def workflow_test_results(repo, name, workflow_file, branch=BRANCH):
+    """Parse gtest/pytest XML artifacts from the newest completed run that has any."""
+    runs = get(
+        f"/repos/{repo}/actions/workflows/{workflow_file}/runs",
+        branch=branch,
+        per_page=10,
+        status="completed",
+    )["workflow_runs"]
+    for run in runs:
+        artifacts = [
+            a
+            for a in get(f"/repos/{repo}/actions/runs/{run['id']}/artifacts", per_page=100)["artifacts"]
+            if a["name"].startswith(TEST_ARTIFACT_PREFIXES) and not a["expired"]
+        ]
+        if not artifacts:
+            continue
+        reports = []
+        for artifact in sorted(artifacts, key=lambda a: a["name"]):
+            report = {"name": artifact["name"]}
+            try:
+                report.update(parse_artifact(download_artifact(repo, artifact["id"])))
+                report["failed_tests"] = report["failed_tests"][:MAX_FAILED_TESTS]
+                report["status"] = test_report_status(report["failed"], report["total"])
+            except Exception as exc:  # noqa: BLE001 - one bad artifact must not hide the rest
+                report.update({"status": "unknown", "error": str(exc)})
+            reports.append(report)
+        statuses = [r["status"] for r in reports]
+        status = "failure" if "failure" in statuses else ("unknown" if "unknown" in statuses else "success")
+        return {
+            "name": name,
+            "file": workflow_file,
+            "status": status,
+            "url": run["html_url"],
+            "sha": run["head_sha"][:8],
+            "updated_at": run["updated_at"],
+            "age_hours": age_hours(run["updated_at"]),
+            "reports": reports,
+        }
+    return {"name": name, "file": workflow_file, "status": "unknown", "error": "no test artifacts in recent runs"}
+
+
+def collect_test_results():
+    return [safe(workflow_test_results, MAIN_REPO, name, workflow_file) for name, workflow_file in TEST_RESULT_WORKFLOWS]
+
+
 def collect_head():
     commit = get(f"/repos/{MAIN_REPO}/commits/{BRANCH}")
     return {
@@ -190,9 +311,9 @@ def collect_visual_tests():
     return entry
 
 
-def overall_status(builds, nightly):
+def overall_status(builds, nightly, test_results=()):
     statuses = [b.get("last_finished", {}).get("status", b["status"]) for b in builds]
-    if "failure" in statuses:
+    if "failure" in statuses or any(t.get("status") == "failure" for t in test_results):
         return "red"
     if any(b.get("age_hours") is not None and b["age_hours"] > STALE_HOURS for b in builds):
         return "red"
@@ -210,6 +331,7 @@ def main(out_path):
         "head": safe(collect_head),
         "builds": builds,
         "tests": collect_workflows("tests") + [safe(collect_visual_tests)],
+        "test_results": collect_test_results(),
         "quality": collect_workflows("quality"),
         "release": safe(collect_latest_release),
         "nightly": nightly,
@@ -225,7 +347,7 @@ def main(out_path):
             {"name": "Visual tests", "url": f"https://github.com/{VISUAL_REPO}"},
         ],
     }
-    status["overall"] = overall_status(builds, nightly)
+    status["overall"] = overall_status(builds, nightly, status["test_results"])
 
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)

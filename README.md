@@ -22,13 +22,16 @@ py -m http.server 8000 --directory site   # open http://localhost:8000
 
 ## Status rules
 
-- Overall **red**: any build workflow failed, or latest build run is older than 36 h.
+- Overall **red**: any build workflow failed, any gtest/pytest report has failures, or latest build run is older than 36 h.
 - **amber**: nightly binaries (`dev-latest`) older than 36 h, or a source is unknown/cancelled.
 - Workflows are resolved by file name (see `WORKFLOWS` in `collector/collect.py`).
 
 ## Next steps (from the plan)
 
-- Phase 2: gtest XML / pytest JUnit artifacts in OPM/ResInsight, parse into pass/fail counts.
+- Phase 2 (done): gtest XML / pytest JUnit artifacts (`gtest-results-*`, `pytest-results-*`,
+  uploaded by OPM/ResInsight#15261) are downloaded and parsed into pass/fail/skip counts
+  and failed test names. Downloading artifacts needs a token (`DASHBOARD_TOKEN` or `GITHUB_TOKEN`);
+  without one the cards show `unknown`.
 - Phase 3: visual-test report details (diff count, link to report).
 - Phase 4: history/trend (`history.json`), notifications.
 - Set a `DASHBOARD_TOKEN` secret (read-only PAT) to avoid rate limits and read artifacts.
