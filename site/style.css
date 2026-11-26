@@ -1,0 +1,41 @@
+:root {
+  --bg: #fff; --fg: #1f2328; --muted: #656d76; --card: #f6f8fa; --border: #d0d7de;
+  --green: #1a7f37; --amber: #9a6700; --red: #cf222e; --grey: #6e7781;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117; --fg: #e6edf3; --muted: #8d96a0; --card: #161b22; --border: #30363d;
+    --green: #3fb950; --amber: #d29922; --red: #f85149; --grey: #8b949e;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+a { color: inherit; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+  padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+h1 { margin: 0; font-size: 1.4rem; }
+h2 { font-size: 1rem; margin: 1.5rem 0 .5rem; }
+main { padding: 0 1.5rem 2rem; max-width: 1200px; margin: 0 auto; }
+.right { text-align: right; }
+.muted { color: var(--muted); font-size: .85rem; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .75rem; }
+.card { background: var(--card); border: 1px solid var(--border); border-left: 5px solid var(--grey);
+  border-radius: 6px; padding: .75rem; }
+.card.success, .card.green { border-left-color: var(--green); }
+.card.failure, .card.red { border-left-color: var(--red); }
+.card.running, .card.amber, .card.stale, .card.cancelled { border-left-color: var(--amber); }
+.card h3 { margin: 0 0 .25rem; font-size: .95rem; }
+.badge { display: inline-block; padding: .15rem .6rem; border-radius: 1rem; color: #fff;
+  background: var(--grey); font-weight: 600; text-transform: uppercase; font-size: .8rem; }
+.badge.success, .badge.green { background: var(--green); }
+.badge.failure, .badge.red { background: var(--red); }
+.badge.running, .badge.amber, .badge.stale, .badge.cancelled { background: var(--amber); }
+ul { padding-left: 1.1rem; margin: .25rem 0 0; }
+.jobs { list-style: none; padding: 0; font-size: .8rem; }
+.jobs .dot { display: inline-block; width: .6rem; height: .6rem; border-radius: 50%;
+  background: var(--grey); margin-right: .4rem; }
+.dot.success { background: var(--green); } .dot.failure { background: var(--red); }
+.dot.running, .dot.cancelled { background: var(--amber); }
+.links { display: flex; flex-wrap: wrap; gap: .5rem; list-style: none; padding: 0; }
+.links a { display: block; padding: .3rem .7rem; border: 1px solid var(--border);
+  border-radius: 6px; text-decoration: none; background: var(--card); }
