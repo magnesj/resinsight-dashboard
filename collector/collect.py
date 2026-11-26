@@ -21,6 +21,7 @@ API = "https://api.github.com"
 MAIN_REPO = "OPM/ResInsight"
 BUILDS_REPO = "CeetronSolutions/resinsight-builds"
 VISUAL_REPO = "CeetronSolutions/ResInsight-visual-tests"
+DASHBOARD_REPO = "magnesj/resinsight-dashboard"
 BRANCH = "dev"
 STALE_HOURS = 36
 
@@ -345,6 +346,7 @@ def main(out_path):
             {"name": "Pull requests", "url": f"https://github.com/{MAIN_REPO}/pulls"},
             {"name": "resinsight-builds", "url": f"https://github.com/{BUILDS_REPO}"},
             {"name": "Visual tests", "url": f"https://github.com/{VISUAL_REPO}"},
+            {"name": "Dashboard source", "url": f"https://github.com/{DASHBOARD_REPO}"},
         ],
     }
     status["overall"] = overall_status(builds, nightly, status["test_results"])
